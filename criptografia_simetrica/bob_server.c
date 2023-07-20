@@ -6,11 +6,37 @@
 #include <netinet/in.h>
 #include <openssl/des.h>
 #include <arpa/inet.h>
+#include <string.h>
 
 #define PORT 8080
 #define MAX_BUFFER_SIZE 1024
 #define KEY_SIZE 8
 #define BMP_HEADER_SIZE 54
+
+// Função para receber o arquivo do cliente
+void receiveFile(int sockfd, const char* filename) {
+    // Definir o nome do arquivo para salvar o arquivo recebido com o nome "fractaljulia_received.bmp"
+    const char* receivedFilename = "fractaljulia_received.bmp";
+
+    FILE* file = fopen(receivedFilename, "wb");
+    if (file == NULL) {
+        perror("Erro ao abrir o arquivo para escrita");
+        exit(1);
+    }
+
+    unsigned char buffer[MAX_BUFFER_SIZE];
+    int bytesRead;
+    while ((bytesRead = read(sockfd, buffer, sizeof(buffer))) > 0) {
+        fwrite(buffer, 1, bytesRead, file);
+    }
+    if (bytesRead < 0) {
+        perror("Erro ao receber o arquivo");
+        exit(1);
+    }
+
+    fclose(file);
+    printf("Arquivo recebido com sucesso: %s\n", receivedFilename);
+}
 
 void encryptFile(const char* inputFilename, const char* outputFilename, const unsigned char* key) {
     FILE* inputFile = fopen(inputFilename, "rb");
@@ -40,9 +66,14 @@ void encryptFile(const char* inputFilename, const char* outputFilename, const un
     fread(inputBuffer, 1, BMP_HEADER_SIZE, inputFile);
     fwrite(inputBuffer, 1, BMP_HEADER_SIZE, outputFile);
 
+    // Inicializar o vetor de inicialização para CBC
+    DES_cblock ivec;
+    memset(&ivec, 0, sizeof(ivec));
+
     size_t bytesRead;
     while ((bytesRead = fread(inputBuffer, 1, sizeof(inputBuffer), inputFile)) > 0) {
-        DES_ecb_encrypt((DES_cblock*)inputBuffer, (DES_cblock*)outputBuffer, &keySchedule, DES_ENCRYPT);
+        // Criptografar usando CBC (Cipher Block Chaining)
+        DES_ncbc_encrypt(inputBuffer, outputBuffer, bytesRead, &keySchedule, &ivec, DES_ENCRYPT);
         fwrite(outputBuffer, 1, bytesRead, outputFile);
     }
 
@@ -74,14 +105,19 @@ void decryptFile(const char* inputFilename, const char* outputFilename, const un
     unsigned char inputBuffer[MAX_BUFFER_SIZE];
     unsigned char outputBuffer[MAX_BUFFER_SIZE];
 
-    // Copiar o cabeçalho BMP para o arquivo de saída
+    // Ler e copiar o cabeçalho BMP para o arquivo de saída
     fseek(inputFile, 0, SEEK_SET);
-    fread(inputBuffer, 1, BMP_HEADER_SIZE, inputFile);
-    fwrite(inputBuffer, 1, BMP_HEADER_SIZE, outputFile);
+    fread(outputBuffer, 1, BMP_HEADER_SIZE, inputFile);
+    fwrite(outputBuffer, 1, BMP_HEADER_SIZE, outputFile);
+
+    // Inicializar o vetor de inicialização para CBC
+    DES_cblock ivec;
+    memset(&ivec, 0, sizeof(ivec));
 
     size_t bytesRead;
     while ((bytesRead = fread(inputBuffer, 1, sizeof(inputBuffer), inputFile)) > 0) {
-        DES_ecb_encrypt((DES_cblock*)inputBuffer, (DES_cblock*)outputBuffer, &keySchedule, DES_DECRYPT);
+        // Descriptografar usando CBC (Cipher Block Chaining)
+        DES_ncbc_encrypt(inputBuffer, outputBuffer, bytesRead, &keySchedule, &ivec, DES_DECRYPT);
         fwrite(outputBuffer, 1, bytesRead, outputFile);
     }
 
@@ -141,34 +177,20 @@ int main() {
         exit(1);
     }
 
-    // Recebimento do arquivo encriptado
-    FILE* encryptedFile = fopen("fractaljulia_encriptado.bmp", "wb");
-    if (encryptedFile == NULL) {
-        perror("Erro ao abrir o arquivo encriptografado para escrita");
-        exit(1);
-    }
-
-    int bytesRead;
-    while ((bytesRead = read(newsockfd, buffer, sizeof(buffer))) > 0) {
-        fwrite(buffer, 1, bytesRead, encryptedFile);
-    }
-    if (bytesRead < 0) {
-        perror("Erro ao receber o arquivo encriptografado");
-        exit(1);
-    }
-
-    fclose(encryptedFile);
+    // Recebimento do arquivo "fractaljulia.bmp"
+    const char* receivedFilename = "fractaljulia_received.bmp";
+    receiveFile(newsockfd, receivedFilename);
     close(newsockfd);
     close(sockfd);
-    printf("Arquivo encriptografado recebido com sucesso!\n");
+    printf("Arquivo 'fractaljulia.bmp' recebido e salvo no servidor!\n");
+
+    // Criptografia do arquivo recebido
+    const char* encryptedFilename = "fractaljulia_encriptado.bmp";
+    encryptFile(receivedFilename, encryptedFilename, desKey);
 
     // Desencriptação do arquivo
-    const char* encryptedFilename = "fractaljulia_encriptado.bmp";
     const char* decryptedFilename = "fractaljulia_desencriptado.bmp";
-
     decryptFile(encryptedFilename, decryptedFilename, desKey);
-
-    printf("Arquivo desencriptado salvo como: %s\n", decryptedFilename);
 
     return 0;
 }
