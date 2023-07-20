@@ -2,10 +2,31 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
 
 #pragma pack(1)  // Empacotamento de 1 byte
 #define PRIME_MIN_DIGITS 10000
 #define PRIME_MAX_DIGITS 99999
+
+#define PORT 8080
+#define HEADER_SIZE 54
+#define MAX_BUFFER_SIZE 1024
+
+void save_bmp_file(char *header, char *buffer, int size) {
+    FILE *file = fopen("received_image.bmp", "wb");
+    if (file != NULL) {
+        fwrite(header, sizeof(char), HEADER_SIZE, file);
+        fwrite(buffer, sizeof(char), size, file);
+        fclose(file);
+        printf("Arquivo .bmp recebido e salvo com sucesso!\n");
+    } else {
+        perror("Erro ao salvar o arquivo");
+    }
+}
 
 typedef struct {
     unsigned char type[2];
@@ -175,14 +196,57 @@ void generatePrimesToFile(const char* filename) {
     printf("Números primos gerados e salvos no arquivo '%s'.\n", filename);
 }
 
-int main() {
+int main(int argc, char *argv[]){
     int p, q;
     generatePrimesToFile("primos.txt");
     readPrimesFromFile("primos.txt", &p, &q);
     createKeys(p, q);
 
-    encryptFile("fractaljulia.bmp", "encrypted.bmp", p * q); // Use a chave pública adequada
-    decryptFile("encrypted.bmp", "decrypted.bmp", p * q); // Use a chave privada adequada
+    int fd =0, confd = 0,b,tot;
+    struct sockaddr_in serv_addr;
+
+    char buff[1025];
+    int num;
+
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    printf("Socket created\n");
+
+    memset(&serv_addr, '0', sizeof(serv_addr));
+    memset(buff, '0', sizeof(buff));
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_addr.sin_port = htons(5000);
+
+    bind(fd, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
+    listen(fd, 10);
+
+    while(1){
+        confd = accept(fd, (struct sockaddr*)NULL, NULL);
+        if (confd==-1) {
+            perror("Accept");
+            continue;
+        }
+        FILE* fp = fopen( "fractal_received.bmp", "wb");
+        tot=0;
+        if(fp != NULL){
+            while( (b = recv(confd, buff, 1024,0))> 0 ) {
+                tot+=b;
+                fwrite(buff, 1, b, fp);
+            }
+
+            printf("Received byte: %d\n",tot);
+            if (b<0)
+               perror("Receiving");
+
+            fclose(fp);
+        } else {
+            perror("File");
+        }
+        close(confd);
+        encryptFile("fractal_received.bmp", "encrypted.bmp", p * q); // Use a chave pública adequada
+        decryptFile("encrypted.bmp", "decrypted.bmp", p * q); // Use a chave privada adequada
+    }
 
     return 0;
 }
