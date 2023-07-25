@@ -1,5 +1,11 @@
 # Trabalho Final - Criptografia
 
+## Alunos
+
+- Gustave A. Persijn – 190046091
+- Daniel Vinícius R. A. – 190026375
+- Lorrayne A. Cardozo – 190032863
+
 ## Criptografia Simétrica
 
 ```bash
